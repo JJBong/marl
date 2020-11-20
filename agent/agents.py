@@ -59,7 +59,7 @@ class Agents:
             q_evals.append(q_eval)
 
         if self.args.play:
-            q_evals = torch.stack(q_evals)
+            q_evals = torch.stack(q_evals, dim=1)
             state = torch.tensor(state, dtype=torch.float)
             if self.args.algorithm == 'vdn':
                 q_total_eval = self.trainer.get_q_value(q_evals)

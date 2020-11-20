@@ -8,4 +8,4 @@ class VDNNet(nn.Module):
 
     @staticmethod
     def forward(q_values):
-        return torch.sum(q_values, dim=0)
+        return torch.sum(q_values, dim=1)
