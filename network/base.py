@@ -27,6 +27,7 @@ class RNN(nn.Module):
 
     def forward(self, obs, hidden_state):
         x = f.relu(self.fc1(obs))
+        x = x.reshape(-1, self.args.rnn_hidden_dim)
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
         h = self.rnn(x, h_in)
         q = self.fc2(h)

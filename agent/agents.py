@@ -35,30 +35,49 @@ class Agents:
                 eval_parameters += agent.eval_parameters
                 self.trainer = QMixTrainer(eval_parameters, self.args)
 
-    def choose_action(self, observation, state=None):
+    def choose_action(self, observation, h_in=None, state=None):
         actions = []
         q_evals = []
+        h_outs = []
         for a in range(self.args.n_agents):
             obs = observation[self.agents[a].agent_id]
             obs = torch.from_numpy(obs).float()
-            q_eval = self.agents[a].get_q_value(obs)
+            obs = obs.unsqueeze(0)
+            if self.args.base_net == 'rnn':
+                _h_in = h_in[self.agents[a].agent_id]
+                _h_in = _h_in.unsqueeze(0)
+                q_eval, h_out = self.agents[a].get_q_value(obs, _h_in)
+                h_outs.append(h_out)
+            else:
+                q_eval = self.agents[a].get_q_value(obs)
             action = self.choose_action_with_epsilon_greedy(q_eval)
+            action = torch.tensor([action])
+            action = action.unsqueeze(0)
             actions.append(action)
-            q_eval = q_eval.gather(0, torch.tensor(action))
+
+            q_eval = q_eval.gather(1, action)
             q_evals.append(q_eval)
 
         if self.args.play:
             q_evals = torch.stack(q_evals)
-            state = torch.from_numpy(state).float()
+            state = torch.tensor(state, dtype=torch.float)
             if self.args.algorithm == 'vdn':
                 q_total_eval = self.trainer.get_q_value(q_evals)
             elif self.args.algorithm == 'qmix':
                 q_total_eval = self.trainer.get_q_value(q_evals, state)
             else:
                 q_total_eval = None
-            return actions, q_total_eval.item()
+            if self.args.base_net == 'rnn':
+                h_outs = torch.stack(h_outs)
+                return actions, h_outs, q_total_eval.item()
+            else:
+                return actions, q_total_eval.item()
         else:
-            return actions
+            if self.args.base_net == 'rnn':
+                h_outs = torch.stack(h_outs)
+                return actions, h_outs
+            else:
+                return actions
 
     def choose_action_with_epsilon_greedy(self, q_val):
         coin = random.random()
@@ -75,14 +94,24 @@ class Agents:
             obs_prime = batch['next_observation'][:, a]
             action = batch['action'].squeeze(1).unsqueeze(2)[:, a]
 
-            q_eval = self.agents[a].get_q_value(obs)
+            if self.args.base_net == 'rnn':
+                _h_in = batch['hidden_in'][:, a]
+                q_eval, _ = self.agents[a].get_q_value(obs, _h_in)
+            else:
+                q_eval = self.agents[a].get_q_value(obs)
             q_eval = q_eval.gather(1, action)
             q_evals.append(q_eval)
-            max_q_prime_eval = self.agents[a].get_target_q_value(obs_prime).max(1)[0].unsqueeze(1)
+
+            if self.args.base_net == 'rnn':
+                _h_out = batch['hidden_out'][:, a]
+                max_q_prime_eval, _ = self.agents[a].get_target_q_value(obs_prime, _h_out)
+                max_q_prime_eval = max_q_prime_eval.max(1)[0].unsqueeze(1)
+            else:
+                max_q_prime_eval = self.agents[a].get_target_q_value(obs_prime).max(1)[0].unsqueeze(1)
             max_q_prime_evals.append(max_q_prime_eval)
 
-        q_evals = torch.stack(q_evals)
-        max_q_prime_evals = torch.stack(max_q_prime_evals)
+        q_evals = torch.stack(q_evals, dim=1)
+        max_q_prime_evals = torch.stack(max_q_prime_evals, dim=1)
 
         state = batch['state']
         next_state = batch['next_state']

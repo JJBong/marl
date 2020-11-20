@@ -24,13 +24,21 @@ class QMix:
 
         self.eval_parameters = list(self.eval_base_net.parameters())
 
-    def get_q_value(self, obs):
-        q_val = self.eval_base_net(obs).to(device=self.args.device)
-        return q_val
+    def get_q_value(self, obs, h_in=None):
+        if h_in is None:
+            q_val = self.eval_base_net(obs)
+            return q_val
+        else:
+            q_val, h_out = self.eval_base_net(obs, h_in)
+            return q_val, h_out
 
-    def get_target_q_value(self, obs):
-        q_val = self.target_base_net(obs).to(device=self.args.device)
-        return q_val
+    def get_target_q_value(self, obs, h_in=None):
+        if h_in is None:
+            q_val = self.target_base_net(obs)
+            return q_val
+        else:
+            q_val, h_out = self.target_base_net(obs, h_in)
+            return q_val, h_out
 
     def update_net(self, params=None):
         if params is None:
@@ -65,11 +73,12 @@ class QMixTrainer:
 
         target = reward + self.gamma * max_q_prime_total_eval * done_mask
 
-        td_error = q_total_eval - target.detach()
+        td_error = target.detach() - q_total_eval
         loss = torch.mean((td_error ** 2))
 
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.eval_parameters, self.args.grad_norm_clip)
         self.optimizer.step()
 
         return loss

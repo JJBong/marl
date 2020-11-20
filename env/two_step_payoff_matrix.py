@@ -35,8 +35,6 @@ class TwoStepPayOffMatrix:
         elif self.state_num == 1 or self.state_num == 2:
             self.state_num = 3
             reward = self.matrix[actions[0]][actions[1]]
-
-        if self.state_num == 3:
             self.done = True
 
         return (

@@ -1,4 +1,4 @@
-from common.replay_memory import ReplayMemoryForMLP, ReplayMemoryForRNN
+from common.replay_memory import ReplayMemoryForMLP, ReplayMemoryForRNN, init_hidden
 from agent.agents import Agents
 
 
@@ -23,17 +23,37 @@ class Runner:
         while step < self.training_steps:
             state, observations = self.env.reset()
             done = False
+            if self.args.base_net == 'rnn':
+                h_out = init_hidden(self.args)
             while not done:
-                actions = self.agents.choose_action(observations)
+                if self.args.base_net == 'rnn':
+                    h_in = h_out
+                    actions, h_out = self.agents.choose_action(observations, h_in)
+                else:
+                    actions = self.agents.choose_action(observations)
                 next_state, next_observations, reward, done = self.env.step(actions)
                 # print('step: {0}, state: {1}, actions: {2}, reward: {3}'.format(step, state, actions, reward))
                 done_mask = 0.0 if done else 1.0
-                self.replay_memory.put([state, observations, actions, reward, next_state, next_observations, done_mask])
+
+                if self.args.base_net == 'rnn':
+                    self.replay_memory.put(
+                        [state, observations, actions, reward, next_state, next_observations, h_in, h_out, done_mask]
+                    )
+                else:
+                    self.replay_memory.put(
+                        [state, observations, actions, reward, next_state, next_observations, done_mask]
+                    )
 
                 if self.replay_memory.size() >= self.args.batch_size:
-                    s, o, a, r, s_prime, o_prime, done_mask = self.replay_memory.sample(self.args.batch_size)
-
                     batch = {}
+                    if self.args.base_net == 'rnn':
+                        s, o, a, r, s_prime, o_prime, hidden_in, hidden_out, done_mask = self.replay_memory.sample(
+                            self.args.batch_size
+                        )
+                        batch['hidden_in'] = hidden_in
+                        batch['hidden_out'] = hidden_out
+                    else:
+                        s, o, a, r, s_prime, o_prime, done_mask = self.replay_memory.sample(self.args.batch_size)
                     batch['state'] = s
                     batch['observation'] = o
                     batch['action'] = a
@@ -79,9 +99,15 @@ class Runner:
             state, observations = self.env.reset()
             done = False
 
+            if self.args.base_net == 'rnn':
+                h_out = init_hidden(self.args)
             state_num = 0
             while not done:
-                actions, q_total_evals = self.agents.choose_action(observations, state)
+                if self.args.base_net == 'rnn':
+                    h_in = h_out
+                    actions, h_out, q_total_evals = self.agents.choose_action(observations, h_in=h_in, state=state)
+                else:
+                    actions, q_total_evals = self.agents.choose_action(observations, state=state)
                 next_state, next_observations, reward, done = self.env.step(actions)
 
                 state = next_state
